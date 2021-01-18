@@ -691,6 +691,12 @@ class Signal(object):
         else:
             return ((2 ** self.length) - 1)
 
+    def get_json_formatting(self):
+        # This returns a string that is used to format this signal
+        # into a JSON string. E.G. for a signal FanSpeed of type Float:
+        #  "FanSpeed":, %15.3e
+        return ""
+
     def segments(self, invert_shift):
         index, pos = divmod(self.start, 8)
         left = self.length
