@@ -363,6 +363,20 @@ int {database_name}_{message_name}_unpack(
     struct {database_name}_{message_name}_t *dst_p,
     const uint8_t *src_p,
     size_t size);
+
+/**
+ * JSON convert message {database_message_name}.
+ *
+ * @param[out] dst_p Buffer to convert the message into
+ * @param[out] size Max size of output buffer dst_p
+ * @param[in] src_p Object to convert
+ *
+ * @return zero(0) or negative error code.
+ */
+int {database_name}_{message_name}_to_json(
+    const uint8_t *dst_p,
+    size_t size,
+    struct {database_name}_{message_name}_t *src_p);
 '''
 
 SIGNAL_DECLARATION_ENCODE_DECODE_FMT = '''\
@@ -465,6 +479,17 @@ int {database_name}_{message_name}_unpack(
         return (-EINVAL);
     }}
 {unpack_body}
+    return (0);
+}}
+
+int {database_name}_{message_name}_to_json(
+    const uint8_t *dst_p,
+    size_t size,
+    struct {database_name}_{message_name}_t *src_p)
+{{
+{to_json_unused}\
+{to_json_variables}\
+{to_json_body}
     return (0);
 }}
 '''
@@ -694,8 +719,48 @@ class Signal(object):
     def get_json_formatting(self):
         # This returns a string that is used to format this signal
         # into a JSON string. E.G. for a signal FanSpeed of type Float:
-        #  "FanSpeed":, %15.3e
-        return ""
+        #  "FanSpeed": %15.3e,
+        # TODO add other types here?
+        if self.is_float:
+            return "%15.3e"
+        else:
+            return "%d"
+
+    def get_json_length(self):
+        # This returns the number of bytes required to represent this signal
+        # in JSON, assuming worst-case float representation, escaped quotation marks, etc.
+        # E.G. \"FanSpeed\": 1234567.123e-12,
+        # Signal name: 8
+        # Quotation: 4
+        # Colon and space: 2
+        # Float representation: 15 (1234567.123e-12)
+        # Comma: 1
+        result = len(self.exported_name)
+        result += 7 # Escaped quotation, colon, space, comma
+        if self.is_float:
+            result += 15
+        else:
+            TODO: Fix these
+            if self.type_name == 'int8_t':
+                result += 3
+            elif self.type_name == 'int16_t':
+                result += 3
+            elif self.type_name == 'int32_t':
+                result += 3
+            elif self.type_name == 'int64_t':
+                result += 3
+            elif self.type_name == 'uint8_t':
+                result += 3
+            elif self.type_name == 'uint16_t':
+                result += 3
+            elif self.type_name == 'uint32_t':
+                result += 3
+            elif self.type_name == 'uint64_t':
+                result += 3
+            else:
+                raise Exception("Invalid signal value type.")
+
+        return result
 
     def segments(self, invert_shift):
         index, pos = divmod(self.start, 8)
@@ -1050,6 +1115,47 @@ def _format_unpack_code_mux(message,
 
     return [('    ' + line).rstrip() for line in lines]
 
+def _format_to_json_code_mux(message,
+                            mux,
+                            body_lines_per_index,
+                            variable_lines,
+                            helper_kinds,
+                            disable_snake_case_conversion):
+    signal_name, multiplexed_signals = list(mux.items())[0]
+    _format_to_json_code_signal(message,
+                                signal_name,
+                                body_lines_per_index,
+                                variable_lines,
+                                helper_kinds)
+    multiplexed_signals_per_id = sorted(list(multiplexed_signals.items()))
+    if disable_snake_case_conversion:
+        signal_name = _canonical(signal_name)
+    else:
+        signal_name = camel_to_snake_case(signal_name)
+
+    lines = [
+        'switch (src_p->{}) {{'.format(signal_name)
+    ]
+
+    for multiplexer_id, multiplexed_signals in multiplexed_signals_per_id:
+        body_lines = _format_to_json_code_level(message,
+                                               multiplexed_signals,
+                                               variable_lines,
+                                               helper_kinds,
+                                               disable_snake_case_conversion)
+        lines.append('')
+        lines.append('case {}:'.format(multiplexer_id))
+        lines.extend(_strip_blank_lines(body_lines))
+        lines.append('    break;')
+
+    lines.extend([
+        '',
+        'default:',
+        '    break;',
+        '}'])
+
+    return [('    ' + line).rstrip() for line in lines]
+
 
 def _format_unpack_code_signal(message,
                                signal_name,
@@ -1100,6 +1206,15 @@ def _format_unpack_code_signal(message,
                                                               signal.type_length)
         body_lines.append(conversion)
 
+def _format_to_json_code_signal(message,
+                               signal_name,
+                               body_lines,
+                               variable_lines,
+                               helper_kinds):
+    signal = message.get_signal_by_name(signal_name)
+
+    line = '    //\"{}\": {} populate with src_p->{},'.format(signal.exported_name, signal.get_json_formatting(), signal.exported_name)
+    body_lines.append(line)
 
 def _format_unpack_code_level(message,
                               signal_names,
@@ -1147,6 +1262,55 @@ def _format_unpack_code_level(message,
 
     return body_lines
 
+def _format_to_json_code_level(message,
+                               signal_names,
+                               variable_lines,
+                               helper_kinds,
+                               disable_snake_case_conversion):
+    """Format one to_json level in a signal tree. (???)
+
+    """
+
+    body_lines = []
+    muxes_lines = []
+
+    body_lines.append("    // Here we should build a snprintf() string with the correct formatting for the types of each signal.")
+    body_lines.append("    // Here we should call snprintf() with the appropriate members for the message type to build the char array.")
+
+    for signal_name in signal_names:
+        if isinstance(signal_name, dict):
+            mux_lines = _format_to_json_code_mux(message,
+                                                 signal_name,
+                                                 body_lines,
+                                                 variable_lines,
+                                                 helper_kinds,
+                                                 disable_snake_case_conversion)
+
+            if muxes_lines:
+                muxes_lines.append('')
+
+            muxes_lines += mux_lines
+        else:
+            _format_to_json_code_signal(message,
+                                        signal_name,
+                                        body_lines,
+                                        variable_lines,
+                                        helper_kinds)
+
+    if body_lines:
+        if body_lines[-1] != '':
+            body_lines.append('')
+
+    if muxes_lines:
+        muxes_lines.append('')
+
+    body_lines = body_lines + muxes_lines
+
+    if body_lines:
+        body_lines = [''] + body_lines
+
+    return body_lines
+
 
 def _format_unpack_code(message, helper_kinds, disable_snake_case_conversion):
     variable_lines = []
@@ -1161,6 +1325,18 @@ def _format_unpack_code(message, helper_kinds, disable_snake_case_conversion):
 
     return '\n'.join(variable_lines), '\n'.join(body_lines)
 
+def _format_to_json_code(message, helper_kinds, disable_snake_case_conversion):
+    variable_lines = []
+    body_lines = _format_to_json_code_level(message,
+                                            message.signal_tree,
+                                            variable_lines,
+                                            helper_kinds,
+                                            disable_snake_case_conversion)
+
+    if variable_lines:
+        variable_lines = sorted(list(set(variable_lines))) + ['', '']
+
+    return '\n'.join(variable_lines), '\n'.join(body_lines)
 
 def _generate_struct(message, bit_fields):
     members = []
@@ -1412,6 +1588,7 @@ def _generate_definitions(database_name, messages, floating_point_numbers, disab
     definitions = []
     pack_helper_kinds = set()
     unpack_helper_kinds = set()
+    to_json_helper_kinds = set()
 
     for message in messages:
         signal_definitions = []
@@ -1452,8 +1629,12 @@ def _generate_definitions(database_name, messages, floating_point_numbers, disab
             unpack_variables, unpack_body = _format_unpack_code(message,
                                                                 unpack_helper_kinds,
                                                                 disable_snake_case_conversion)
+            to_json_variables, to_json_body = _format_to_json_code(message,
+                                                                to_json_helper_kinds,
+                                                                disable_snake_case_conversion)
             pack_unused = ''
             unpack_unused = ''
+            to_json_unused = ''
 
             if not pack_body:
                 pack_unused += '    (void)src_p;\n\n'
@@ -1468,10 +1649,13 @@ def _generate_definitions(database_name, messages, floating_point_numbers, disab
                                                message_length=message.length,
                                                pack_unused=pack_unused,
                                                unpack_unused=unpack_unused,
+                                               to_json_unused=to_json_unused,
                                                pack_variables=pack_variables,
                                                pack_body=pack_body,
                                                unpack_variables=unpack_variables,
-                                               unpack_body=unpack_body)
+                                               unpack_body=unpack_body,
+                                               to_json_variables=to_json_variables,
+                                               to_json_body=to_json_body)
         else:
             definition = EMPTY_DEFINITION_FMT.format(database_name=database_name,
                                                      message_name=message.exported_name)
