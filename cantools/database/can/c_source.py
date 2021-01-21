@@ -69,6 +69,25 @@ extern "C" {{
 {structs}
 {declarations}
 
+/**
+ * JSON decoder
+ *
+ * @param[out] dst_p Buffer to convert the message into
+ * @param[out] size Max size of output buffer dst_p
+ * @param[in] can_id The CAN ID of the frame to decode
+ * @param[in] can_size The number of bytes in the CAN payload
+ * @param[in] can_payload The CAN payload
+ *
+ * @return zero(0) or negative error code.
+ */
+
+int json_decode(
+    uint8_t *dst_p,
+    size_t size,
+    uint32_t can_id,
+    size_t can_size,
+    uint8_t *can_payload);
+
 #ifdef __cplusplus
 }}
 #endif
@@ -113,6 +132,27 @@ SOURCE_FMT = '''\
 
 {helpers}\
 {definitions}\
+
+{unpacked_structs}\
+
+
+int json_decode(
+        uint8_t *dst_p,
+        size_t size,
+        uint32_t can_id,
+        size_t can_size,
+        uint8_t *can_payload)
+{{
+    int result;
+    switch(can_id)
+    {{
+{decoder}\
+
+    default:
+        return (-EINVAL);
+    }}
+    return (0);
+}}
 '''
 
 FUZZER_SOURCE_FMT = '''\
@@ -1751,6 +1791,39 @@ def _generate_fuzzer_source(database_name,
 
     return source, makefile
 
+def _generate_unpacked_structs(database_name, messages):
+    lookup = []
+    for message in messages:
+        frame_name = '{}_{}_'.format(database_name, message.exported_name)
+        lookup.append('struct {name}t {name}unpacked;'.format(name=frame_name))
+    return '\n'.join(lookup)
+
+def _generate_decoder(database_name, messages):
+    lookup = []
+
+
+    # tri_test_QSVN_Output01_unpack(&unpacked, packed, 8);
+    # // Unpack struct to JSON.
+    # res = tri_test_QSVN_Output01_to_json(json_output_buffer, BUFFER_SIZE, &unpacked);
+
+    for message in messages:
+        frame_const = '{}_{}_FRAME_ID'.format(database_name.upper(), message.exported_name.upper())
+        frame_name = '{}_{}_'.format(database_name, message.exported_name)
+        lookup.append('    case {} :'.format(frame_const))
+        lookup.append('        result = {name}unpack(&{name}unpacked, can_payload, can_size);'.format(name=frame_name))
+        lookup.append('        if (result < 0) return result;')
+        lookup.append('        result = {name}to_json(dst_p, size, &{name}unpacked);'.format(name=frame_name))
+        lookup.append('        if (result < 0) return result;')
+        # lookup.append('        return {}(dst_p, size, '.format(decode_function))
+        lookup.append('        break;')
+
+    # return '\n'.join([
+    #     '{}_{}_FRAME_ID'.format(
+    #         database_name.upper(),
+    #         message.exported_name.upper())
+    #     for message in messages
+    # ])
+    return '\n'.join(lookup)
 
 def generate(database,
              database_name,
@@ -1811,6 +1884,10 @@ def generate(database,
                                                       disable_snake_case_conversion)
     helpers = _generate_helpers(helper_kinds)
 
+    unpacked_structs = _generate_unpacked_structs(database_name, messages)
+
+    decoder = _generate_decoder(database_name, messages)
+
     header = HEADER_FMT.format(version=__version__,
                                date=date,
                                include_guard=include_guard,
@@ -1826,7 +1903,9 @@ def generate(database,
                                date=date,
                                header=header_name,
                                helpers=helpers,
-                               definitions=definitions)
+                               definitions=definitions,
+                               unpacked_structs=unpacked_structs,
+                               decoder=decoder)
 
     fuzzer_source, fuzzer_makefile = _generate_fuzzer_source(
         database_name,
