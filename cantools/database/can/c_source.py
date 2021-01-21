@@ -374,7 +374,7 @@ int {database_name}_{message_name}_unpack(
  * @return zero(0) or negative error code.
  */
 int {database_name}_{message_name}_to_json(
-    const uint8_t *dst_p,
+    uint8_t *dst_p,
     size_t size,
     struct {database_name}_{message_name}_t *src_p);
 '''
@@ -483,7 +483,7 @@ int {database_name}_{message_name}_unpack(
 }}
 
 int {database_name}_{message_name}_to_json(
-    const uint8_t *dst_p,
+    uint8_t *dst_p,
     size_t size,
     struct {database_name}_{message_name}_t *src_p)
 {{
@@ -740,7 +740,7 @@ class Signal(object):
         if self.is_float:
             result += 15
         else:
-            TODO: Fix these
+            # TODO: Fix these
             if self.type_name == 'int8_t':
                 result += 3
             elif self.type_name == 'int16_t':
@@ -1212,9 +1212,23 @@ def _format_to_json_code_signal(message,
                                variable_lines,
                                helper_kinds):
     signal = message.get_signal_by_name(signal_name)
-
-    line = '    //\"{}\": {} populate with src_p->{},'.format(signal.exported_name, signal.get_json_formatting(), signal.exported_name)
+    line = '    written = snprintf(snprintf_buffer, SNPRINTPF_BUFFER_LEN, \"\\"{name}\\": {format}, \", src_p->{name});'.format(name=signal.exported_name, format=signal.get_json_formatting())
     body_lines.append(line)
+    line = '    if ((written < 0) && (written < SNPRINTPF_BUFFER_LEN)) return (-EINVAL);'  # The JSON representation of this key/value pair couldn't fit into SNPRINTPF_BUFFER_LEN
+    body_lines.append(line)
+    line = '    if ((total_size + written) >= size) return (-EINVAL);' # This new key/value pair wouldn't fit into the output buffer.
+    body_lines.append(line)
+    line = '    printf("Formatted: %s\\n", snprintf_buffer);'
+    # body_lines.append(line)
+    line = '    memcpy(dst_p + total_size, snprintf_buffer, written);'
+    body_lines.append(line)
+    line = '    printf("Total: %s\\n", dst_p);'
+    # body_lines.append(line)
+    line = '    total_size += written;'
+    body_lines.append(line)
+
+    # snprintf("{\"id\": %d, \"signalName1\": %d, \"signalName2\":, %15.3e}", _max_output_size, canId, signalName1, signalName2)
+    # line = '    //\"{}\": {} populate with src_p->{},'.format(signal.exported_name, signal.get_json_formatting(), signal.exported_name)
 
 def _format_unpack_code_level(message,
                               signal_names,
@@ -1276,6 +1290,10 @@ def _format_to_json_code_level(message,
 
     body_lines.append("    // Here we should build a snprintf() string with the correct formatting for the types of each signal.")
     body_lines.append("    // Here we should call snprintf() with the appropriate members for the message type to build the char array.")
+    body_lines.append("    size_t total_size = 0;")
+    body_lines.append("    int written = 0;")
+    body_lines.append("    dst_p[total_size++] = '{';\n")
+
 
     for signal_name in signal_names:
         if isinstance(signal_name, dict):
@@ -1308,6 +1326,9 @@ def _format_to_json_code_level(message,
 
     if body_lines:
         body_lines = [''] + body_lines
+
+    body_lines.append("    dst_p[total_size-2] = '}';") # Overwrite trailing comma
+    body_lines.append("    dst_p[total_size-1] = '\\0';") # Terminate string
 
     return body_lines
 
@@ -1692,6 +1713,10 @@ def _generate_helpers(kinds):
                                             UNPACK_HELPER_LEFT_SHIFT_FMT,
                                             UNPACK_HELPER_RIGHT_SHIFT_FMT)
     helpers = pack_helpers + unpack_helpers
+
+    helpers.append("#define SNPRINTPF_BUFFER_LEN 256")
+    helpers.append("// Buffer for formatting JSON messages.")
+    helpers.append("char snprintf_buffer[SNPRINTPF_BUFFER_LEN];\n\n")
 
     if helpers:
         helpers.append('')
