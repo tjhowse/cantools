@@ -83,4 +83,4 @@ test_command_line_convert.kcd
 /main_bit_fields
 
 # tjhowse-specific
-tri_test.dbc
+tri_test*.dbc
