@@ -487,9 +487,14 @@ int {database_name}_{message_name}_to_json(
     size_t size,
     struct {database_name}_{message_name}_t *src_p)
 {{
+    size_t total_size = 0;
+    int written = 0;
+    dst_p[total_size++] = '{{';
 {to_json_unused}\
 {to_json_variables}\
 {to_json_body}
+    dst_p[total_size-2] = '}}';
+    dst_p[total_size-1] = '\\0';
     return (0);
 }}
 '''
@@ -1288,13 +1293,6 @@ def _format_to_json_code_level(message,
     body_lines = []
     muxes_lines = []
 
-    body_lines.append("    // Here we should build a snprintf() string with the correct formatting for the types of each signal.")
-    body_lines.append("    // Here we should call snprintf() with the appropriate members for the message type to build the char array.")
-    body_lines.append("    size_t total_size = 0;")
-    body_lines.append("    int written = 0;")
-    body_lines.append("    dst_p[total_size++] = '{';\n")
-
-
     for signal_name in signal_names:
         if isinstance(signal_name, dict):
             mux_lines = _format_to_json_code_mux(message,
@@ -1326,9 +1324,6 @@ def _format_to_json_code_level(message,
 
     if body_lines:
         body_lines = [''] + body_lines
-
-    body_lines.append("    dst_p[total_size-2] = '}';") # Overwrite trailing comma
-    body_lines.append("    dst_p[total_size-1] = '\\0';") # Terminate string
 
     return body_lines
 
