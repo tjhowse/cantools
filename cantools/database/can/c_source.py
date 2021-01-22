@@ -820,9 +820,7 @@ class Signal(object):
 
     def get_json_formatting(self):
         # This returns a string that is used to format this signal
-        # into a JSON string. E.G. for a signal FanSpeed of type Float:
-        #  "FanSpeed": %15.3e,
-        # TODO add other types here?
+        # into a JSON string.
         if self.is_float:
             return "%15.3e"
         else:
