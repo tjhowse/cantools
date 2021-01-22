@@ -603,6 +603,14 @@ SIGNAL_MEMBER_FMT = '''\
     {type_name} {name}{length};\
 '''
 
+TO_JSON_FMT = '''\
+    case {const}:
+        result = {name}unpack(&{name}unpacked, can_payload, can_size);
+        if (result < 0) return result;
+        result = {name}to_json(dst_p, size, &{name}unpacked);
+        if (result < 0) return result;
+        break;
+'''
 
 class Signal(object):
 
@@ -1801,28 +1809,10 @@ def _generate_unpacked_structs(database_name, messages):
 def _generate_decoder(database_name, messages):
     lookup = []
 
-
-    # tri_test_QSVN_Output01_unpack(&unpacked, packed, 8);
-    # // Unpack struct to JSON.
-    # res = tri_test_QSVN_Output01_to_json(json_output_buffer, BUFFER_SIZE, &unpacked);
-
     for message in messages:
         frame_const = '{}_{}_FRAME_ID'.format(database_name.upper(), message.exported_name.upper())
         frame_name = '{}_{}_'.format(database_name, message.exported_name)
-        lookup.append('    case {} :'.format(frame_const))
-        lookup.append('        result = {name}unpack(&{name}unpacked, can_payload, can_size);'.format(name=frame_name))
-        lookup.append('        if (result < 0) return result;')
-        lookup.append('        result = {name}to_json(dst_p, size, &{name}unpacked);'.format(name=frame_name))
-        lookup.append('        if (result < 0) return result;')
-        # lookup.append('        return {}(dst_p, size, '.format(decode_function))
-        lookup.append('        break;')
-
-    # return '\n'.join([
-    #     '{}_{}_FRAME_ID'.format(
-    #         database_name.upper(),
-    #         message.exported_name.upper())
-    #     for message in messages
-    # ])
+        lookup.append(TO_JSON_FMT.format(const=frame_const, name=frame_name))
     return '\n'.join(lookup)
 
 def generate(database,
