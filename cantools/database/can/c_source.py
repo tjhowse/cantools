@@ -817,42 +817,6 @@ class Signal(object):
         else:
             return "%d"
 
-    def get_json_length(self):
-        # This returns the number of bytes required to represent this signal
-        # in JSON, assuming worst-case float representation, escaped quotation marks, etc.
-        # E.G. \"FanSpeed\": 1234567.123e-12,
-        # Signal name: 8
-        # Quotation: 4
-        # Colon and space: 2
-        # Float representation: 15 (1234567.123e-12)
-        # Comma: 1
-        result = len(self.exported_name)
-        result += 7 # Escaped quotation, colon, space, comma
-        if self.is_float:
-            result += 15
-        else:
-            # TODO: Fix these
-            if self.type_name == 'int8_t':
-                result += 3
-            elif self.type_name == 'int16_t':
-                result += 3
-            elif self.type_name == 'int32_t':
-                result += 3
-            elif self.type_name == 'int64_t':
-                result += 3
-            elif self.type_name == 'uint8_t':
-                result += 3
-            elif self.type_name == 'uint16_t':
-                result += 3
-            elif self.type_name == 'uint32_t':
-                result += 3
-            elif self.type_name == 'uint64_t':
-                result += 3
-            else:
-                raise Exception("Invalid signal value type.")
-
-        return result
-
     def segments(self, invert_shift):
         index, pos = divmod(self.start, 8)
         left = self.length
