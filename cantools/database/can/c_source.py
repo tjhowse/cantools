@@ -88,6 +88,21 @@ int json_decode(
     size_t can_size,
     uint8_t *can_payload);
 
+/**
+ * CAN ID converter
+ *
+ * @param[out] dst_p Buffer to output the human-readable CAN frame name
+ * @param[out] size Max size of output buffer dst_p
+ * @param[in] can_id The CAN ID of the frame to convert
+ *
+ * @return zero(0) or negative error code.
+ */
+
+int can_id_to_message_name(
+        uint8_t *dst_p,
+        size_t size,
+        uint32_t can_id);
+
 #ifdef __cplusplus
 }}
 #endif
@@ -147,6 +162,22 @@ int json_decode(
     switch(can_id)
     {{
 {decoder}\
+
+    default:
+        return (-EINVAL);
+    }}
+    return (0);
+}}
+
+int can_id_to_message_name(
+        uint8_t *dst_p,
+        size_t size,
+        uint32_t can_id)
+{{
+    int result;
+    switch(can_id)
+    {{
+{can_id_to_message}\
 
     default:
         return (-EINVAL);
@@ -609,6 +640,13 @@ TO_JSON_FMT = '''\
         if (result < 0) return result;
         result = {name}to_json(dst_p, size, &{name}unpacked);
         if (result < 0) return result;
+        break;
+'''
+
+CAN_NAME_FMT = '''\
+    case {const}:
+        if (strlen("{name}") >= size) return (-EINVAL);
+        strcpy(dst_p, "{name}");
         break;
 '''
 
@@ -1815,6 +1853,14 @@ def _generate_decoder(database_name, messages):
         lookup.append(TO_JSON_FMT.format(const=frame_const, name=frame_name))
     return '\n'.join(lookup)
 
+def _generate_converter(database_name, messages):
+    lookup = []
+
+    for message in messages:
+        frame_const = '{}_{}_FRAME_ID'.format(database_name.upper(), message.exported_name.upper())
+        lookup.append(CAN_NAME_FMT.format(const=frame_const, name=message.exported_name))
+    return '\n'.join(lookup)
+
 def generate(database,
              database_name,
              header_name,
@@ -1878,6 +1924,8 @@ def generate(database,
 
     decoder = _generate_decoder(database_name, messages)
 
+    can_id_to_message = _generate_converter(database_name, messages)
+
     header = HEADER_FMT.format(version=__version__,
                                date=date,
                                include_guard=include_guard,
@@ -1895,7 +1943,8 @@ def generate(database,
                                helpers=helpers,
                                definitions=definitions,
                                unpacked_structs=unpacked_structs,
-                               decoder=decoder)
+                               decoder=decoder,
+                               can_id_to_message=can_id_to_message)
 
     fuzzer_source, fuzzer_makefile = _generate_fuzzer_source(
         database_name,
