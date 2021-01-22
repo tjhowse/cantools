@@ -1267,9 +1267,9 @@ def _format_to_json_code_signal(message,
                                variable_lines,
                                helper_kinds):
     signal = message.get_signal_by_name(signal_name)
-    line = '    written = snprintf(snprintf_buffer, SNPRINTPF_BUFFER_LEN, \"\\"{name}\\": {format}, \", src_p->{name});'.format(name=signal.exported_name, format=signal.get_json_formatting())
+    line = '    written = snprintf(snprintf_buffer, SNPRINTF_BUFFER_LEN, \"\\"{name}\\": {format}, \", src_p->{name});'.format(name=signal.exported_name, format=signal.get_json_formatting())
     body_lines.append(line)
-    line = '    if ((written < 0) && (written < SNPRINTPF_BUFFER_LEN)) return (-EINVAL);'  # The JSON representation of this key/value pair couldn't fit into SNPRINTPF_BUFFER_LEN
+    line = '    if ((written < 0) && (written < SNPRINTF_BUFFER_LEN)) return (-EINVAL);'  # The JSON representation of this key/value pair couldn't fit into SNPRINTF_BUFFER_LEN
     body_lines.append(line)
     line = '    if ((total_size + written) >= size) return (-EINVAL);' # This new key/value pair wouldn't fit into the output buffer.
     body_lines.append(line)
@@ -1759,9 +1759,9 @@ def _generate_helpers(kinds):
                                             UNPACK_HELPER_RIGHT_SHIFT_FMT)
     helpers = pack_helpers + unpack_helpers
 
-    helpers.append("#define SNPRINTPF_BUFFER_LEN 256")
+    helpers.append("#define SNPRINTF_BUFFER_LEN 256")
     helpers.append("// Buffer for formatting JSON messages.")
-    helpers.append("char snprintf_buffer[SNPRINTPF_BUFFER_LEN];\n\n")
+    helpers.append("char snprintf_buffer[SNPRINTF_BUFFER_LEN];\n\n")
 
     if helpers:
         helpers.append('')
