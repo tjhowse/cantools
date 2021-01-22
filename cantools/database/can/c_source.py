@@ -51,6 +51,8 @@ extern "C" {{
 #    define EINVAL 22
 #endif
 
+#define SNPRINTF_BUFFER_LEN 256
+
 /* Frame ids. */
 {frame_id_defines}
 
@@ -560,6 +562,7 @@ int {database_name}_{message_name}_to_json(
 {{
     size_t total_size = 0;
     int written = 0;
+    char snprintf_buffer[SNPRINTF_BUFFER_LEN];
     dst_p[total_size++] = '{{';
 {to_json_unused}\
 {to_json_variables}\
@@ -641,6 +644,14 @@ TO_JSON_FMT = '''\
         result = {name}to_json(dst_p, size, &{name}unpacked);
         if (result < 0) return result;
         break;
+'''
+
+SNPRINTF_FMT = '''\
+    written = snprintf(snprintf_buffer, SNPRINTF_BUFFER_LEN, \"\\"{name}\\": {format}, \", src_p->{name});
+    if ((written < 0) || (written >= SNPRINTF_BUFFER_LEN)) return (-EINVAL);
+    if ((total_size + written) >= size) return (-EINVAL);
+    memcpy(dst_p + total_size, snprintf_buffer, written);
+    total_size += written;
 '''
 
 CAN_NAME_FMT = '''\
@@ -1267,23 +1278,7 @@ def _format_to_json_code_signal(message,
                                variable_lines,
                                helper_kinds):
     signal = message.get_signal_by_name(signal_name)
-    line = '    written = snprintf(snprintf_buffer, SNPRINTF_BUFFER_LEN, \"\\"{name}\\": {format}, \", src_p->{name});'.format(name=signal.exported_name, format=signal.get_json_formatting())
-    body_lines.append(line)
-    line = '    if ((written < 0) && (written < SNPRINTF_BUFFER_LEN)) return (-EINVAL);'  # The JSON representation of this key/value pair couldn't fit into SNPRINTF_BUFFER_LEN
-    body_lines.append(line)
-    line = '    if ((total_size + written) >= size) return (-EINVAL);' # This new key/value pair wouldn't fit into the output buffer.
-    body_lines.append(line)
-    line = '    printf("Formatted: %s\\n", snprintf_buffer);'
-    # body_lines.append(line)
-    line = '    memcpy(dst_p + total_size, snprintf_buffer, written);'
-    body_lines.append(line)
-    line = '    printf("Total: %s\\n", dst_p);'
-    # body_lines.append(line)
-    line = '    total_size += written;'
-    body_lines.append(line)
-
-    # snprintf("{\"id\": %d, \"signalName1\": %d, \"signalName2\":, %15.3e}", _max_output_size, canId, signalName1, signalName2)
-    # line = '    //\"{}\": {} populate with src_p->{},'.format(signal.exported_name, signal.get_json_formatting(), signal.exported_name)
+    body_lines.append(SNPRINTF_FMT.format(name=signal.exported_name, format=signal.get_json_formatting()))
 
 def _format_unpack_code_level(message,
                               signal_names,
@@ -1758,10 +1753,6 @@ def _generate_helpers(kinds):
                                             UNPACK_HELPER_LEFT_SHIFT_FMT,
                                             UNPACK_HELPER_RIGHT_SHIFT_FMT)
     helpers = pack_helpers + unpack_helpers
-
-    helpers.append("#define SNPRINTF_BUFFER_LEN 256")
-    helpers.append("// Buffer for formatting JSON messages.")
-    helpers.append("char snprintf_buffer[SNPRINTF_BUFFER_LEN];\n\n")
 
     if helpers:
         helpers.append('')
