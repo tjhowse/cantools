@@ -647,7 +647,9 @@ TO_JSON_FMT = '''\
 '''
 
 SNPRINTF_FMT = '''\
-    written = snprintf(snprintf_buffer, SNPRINTF_BUFFER_LEN, \"\\"{name}\\": {format}, \", src_p->{name});
+    written = snprintf(snprintf_buffer, SNPRINTF_BUFFER_LEN,
+                       \"\\"{signal_name}\\": {format}, \",
+                       {database_name}_{message_name}_{signal_name}_decode(src_p->{signal_name}));
     if ((written < 0) || (written >= SNPRINTF_BUFFER_LEN)) return (-EINVAL);
     if ((total_size + written) >= size) return (-EINVAL);
     memcpy(dst_p + total_size, snprintf_buffer, written);
@@ -821,10 +823,14 @@ class Signal(object):
     def get_json_formatting(self):
         # This returns a string that is used to format this signal
         # into a JSON string.
-        if self.is_float:
-            return "%15.3e"
-        else:
-            return "%d"
+        return "%g"
+        # TODO evaluate whether this is the best solution.
+        # It will likely have to change once enum decoding is in.
+        # if self.type_name in ['float', 'double']:
+        # if self.decimal.scale != 1:
+        #     return "%15.3e"
+        # else:
+        #     return "%d"
 
     def segments(self, invert_shift):
         index, pos = divmod(self.start, 8)
@@ -1184,13 +1190,15 @@ def _format_to_json_code_mux(message,
                             body_lines_per_index,
                             variable_lines,
                             helper_kinds,
-                            disable_snake_case_conversion):
+                            disable_snake_case_conversion,
+                            database_name):
     signal_name, multiplexed_signals = list(mux.items())[0]
     _format_to_json_code_signal(message,
                                 signal_name,
                                 body_lines_per_index,
                                 variable_lines,
-                                helper_kinds)
+                                helper_kinds,
+                                database_name)
     multiplexed_signals_per_id = sorted(list(multiplexed_signals.items()))
     if disable_snake_case_conversion:
         signal_name = _canonical(signal_name)
@@ -1206,7 +1214,8 @@ def _format_to_json_code_mux(message,
                                                multiplexed_signals,
                                                variable_lines,
                                                helper_kinds,
-                                               disable_snake_case_conversion)
+                                               disable_snake_case_conversion,
+                                               database_name)
         lines.append('')
         lines.append('case {}:'.format(multiplexer_id))
         lines.extend(_strip_blank_lines(body_lines))
@@ -1274,9 +1283,10 @@ def _format_to_json_code_signal(message,
                                signal_name,
                                body_lines,
                                variable_lines,
-                               helper_kinds):
+                               helper_kinds,
+                               database_name):
     signal = message.get_signal_by_name(signal_name)
-    body_lines.append(SNPRINTF_FMT.format(name=signal.exported_name, format=signal.get_json_formatting()))
+    body_lines.append(SNPRINTF_FMT.format(database_name=database_name, message_name=message.name, signal_name=signal.exported_name, format=signal.get_json_formatting()))
 
 def _format_unpack_code_level(message,
                               signal_names,
@@ -1328,7 +1338,8 @@ def _format_to_json_code_level(message,
                                signal_names,
                                variable_lines,
                                helper_kinds,
-                               disable_snake_case_conversion):
+                               disable_snake_case_conversion,
+                               database_name):
     """Format one to_json level in a signal tree. (???)
 
     """
@@ -1343,7 +1354,8 @@ def _format_to_json_code_level(message,
                                                  body_lines,
                                                  variable_lines,
                                                  helper_kinds,
-                                                 disable_snake_case_conversion)
+                                                 disable_snake_case_conversion,
+                                                 database_name)
 
             if muxes_lines:
                 muxes_lines.append('')
@@ -1354,7 +1366,8 @@ def _format_to_json_code_level(message,
                                         signal_name,
                                         body_lines,
                                         variable_lines,
-                                        helper_kinds)
+                                        helper_kinds,
+                                        database_name)
 
     if body_lines:
         if body_lines[-1] != '':
@@ -1384,13 +1397,14 @@ def _format_unpack_code(message, helper_kinds, disable_snake_case_conversion):
 
     return '\n'.join(variable_lines), '\n'.join(body_lines)
 
-def _format_to_json_code(message, helper_kinds, disable_snake_case_conversion):
+def _format_to_json_code(message, helper_kinds, disable_snake_case_conversion, database_name):
     variable_lines = []
     body_lines = _format_to_json_code_level(message,
                                             message.signal_tree,
                                             variable_lines,
                                             helper_kinds,
-                                            disable_snake_case_conversion)
+                                            disable_snake_case_conversion,
+                                            database_name)
 
     if variable_lines:
         variable_lines = sorted(list(set(variable_lines))) + ['', '']
@@ -1690,7 +1704,8 @@ def _generate_definitions(database_name, messages, floating_point_numbers, disab
                                                                 disable_snake_case_conversion)
             to_json_variables, to_json_body = _format_to_json_code(message,
                                                                 to_json_helper_kinds,
-                                                                disable_snake_case_conversion)
+                                                                disable_snake_case_conversion,
+                                                                database_name)
             pack_unused = ''
             unpack_unused = ''
             to_json_unused = ''
