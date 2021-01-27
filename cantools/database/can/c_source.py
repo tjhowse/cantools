@@ -564,6 +564,7 @@ int {database_name}_{message_name}_to_json(
     int written = 0;
     char snprintf_buffer[SNPRINTF_BUFFER_LEN];
     dst_p[total_size++] = '{{';
+    double decoded_value;
 {to_json_unused}\
 {to_json_variables}\
 {to_json_body}
@@ -647,9 +648,10 @@ TO_JSON_FMT = '''\
 '''
 
 SNPRINTF_FMT = '''\
+    decoded_value = {database_name}_{message_name}_{signal_name}_decode(src_p->{signal_name});
     written = snprintf(snprintf_buffer, SNPRINTF_BUFFER_LEN,
                        \"\\"{signal_name}\\": {format}, \",
-                       {database_name}_{message_name}_{signal_name}_decode(src_p->{signal_name}));
+                       decoded_value);
     if ((written < 0) || (written >= SNPRINTF_BUFFER_LEN)) return (-EINVAL);
     if ((total_size + written) >= size) return (-EINVAL);
     memcpy(dst_p + total_size, snprintf_buffer, written);
