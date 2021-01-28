@@ -46,10 +46,14 @@ extern "C" {{
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <string.h>
+#include <stdio.h>
 
 #ifndef EINVAL
 #    define EINVAL 22
 #endif
+
+#define SNPRINTF_BUFFER_LEN 256
 
 /* Frame ids. */
 {frame_id_defines}
@@ -68,6 +72,40 @@ extern "C" {{
 
 {structs}
 {declarations}
+
+/**
+ * JSON decoder
+ *
+ * @param[out] dst_p Buffer to convert the message into
+ * @param[out] size Max size of output buffer dst_p
+ * @param[in] can_id The CAN ID of the frame to decode
+ * @param[in] can_size The number of bytes in the CAN payload
+ * @param[in] can_payload The CAN payload
+ *
+ * @return zero(0) or negative error code.
+ */
+
+int json_decode(
+    uint8_t *dst_p,
+    size_t size,
+    uint32_t can_id,
+    size_t can_size,
+    uint8_t *can_payload);
+
+/**
+ * CAN ID converter
+ *
+ * @param[out] dst_p Buffer to output the human-readable CAN frame name
+ * @param[out] size Max size of output buffer dst_p
+ * @param[in] can_id The CAN ID of the frame to convert
+ *
+ * @return zero(0) or negative error code.
+ */
+
+int can_id_to_message_name(
+        char *dst_p,
+        size_t size,
+        uint32_t can_id);
 
 #ifdef __cplusplus
 }}
@@ -113,6 +151,43 @@ SOURCE_FMT = '''\
 
 {helpers}\
 {definitions}\
+{choice_decoders}\
+
+{unpacked_structs}\
+
+
+int json_decode(
+        uint8_t *dst_p,
+        size_t size,
+        uint32_t can_id,
+        size_t can_size,
+        uint8_t *can_payload)
+{{
+    int result;
+    switch(can_id)
+    {{
+{decoder}\
+
+    default:
+        return (-EINVAL);
+    }}
+    return (0);
+}}
+
+int can_id_to_message_name(
+        char *dst_p,
+        size_t size,
+        uint32_t can_id)
+{{
+    switch(can_id)
+    {{
+{can_id_to_message}\
+
+    default:
+        return (-EINVAL);
+    }}
+    return (0);
+}}
 '''
 
 FUZZER_SOURCE_FMT = '''\
@@ -363,6 +438,20 @@ int {database_name}_{message_name}_unpack(
     struct {database_name}_{message_name}_t *dst_p,
     const uint8_t *src_p,
     size_t size);
+
+/**
+ * JSON convert message {database_message_name}.
+ *
+ * @param[out] dst_p Buffer to convert the message into
+ * @param[out] size Max size of output buffer dst_p
+ * @param[in] src_p Object to convert
+ *
+ * @return zero(0) or negative error code.
+ */
+int {database_name}_{message_name}_to_json(
+    uint8_t *dst_p,
+    size_t size,
+    struct {database_name}_{message_name}_t *src_p);
 '''
 
 SIGNAL_DECLARATION_ENCODE_DECODE_FMT = '''\
@@ -467,6 +556,24 @@ int {database_name}_{message_name}_unpack(
 {unpack_body}
     return (0);
 }}
+
+int {database_name}_{message_name}_to_json(
+    uint8_t *dst_p,
+    size_t size,
+    struct {database_name}_{message_name}_t *src_p)
+{{
+    size_t total_size = 0;
+    int written = 0;
+    char snprintf_buffer[SNPRINTF_BUFFER_LEN];
+    dst_p[total_size++] = '{{';
+    double decoded_value;
+{to_json_unused}\
+{to_json_variables}\
+{to_json_body}
+    dst_p[total_size-2] = '}}';
+    dst_p[total_size-1] = '\\0';
+    return (0);
+}}
 '''
 
 SIGNAL_DEFINITION_ENCODE_DECODE_FMT = '''\
@@ -533,6 +640,43 @@ SIGNAL_MEMBER_FMT = '''\
     {type_name} {name}{length};\
 '''
 
+TO_JSON_FMT = '''\
+    case {const}:
+        result = {name}unpack(&{name}unpacked, can_payload, can_size);
+        if (result < 0) return result;
+        result = {name}to_json(dst_p, size, &{name}unpacked);
+        if (result < 0) return result;
+        break;
+'''
+
+SNPRINTF_COMMON_FMT = '''\
+    if ((written < 0) || (written >= SNPRINTF_BUFFER_LEN)) return (-EINVAL);
+    if ((total_size + written) >= size) return (-EINVAL);
+    memcpy(dst_p + total_size, snprintf_buffer, written);
+    total_size += written;
+'''
+
+SNPRINTF_FMT = '''\
+    decoded_value = {database_name}_{message_name}_{signal_name}_decode(src_p->{signal_name});
+    written = snprintf(snprintf_buffer, SNPRINTF_BUFFER_LEN,
+                       \"\\"{signal_name}\\": {format}, \",
+                       decoded_value);
+''' + SNPRINTF_COMMON_FMT
+
+SNPRINTF_ENUM_FMT = '''\
+    decoded_value = {database_name}_{message_name}_{signal_name}_decode(src_p->{signal_name});
+    written = snprintf(snprintf_buffer, SNPRINTF_BUFFER_LEN,
+                       \"\\"{signal_name}\\": {format}, \",
+                       {database_name_upper}_{message_name_upper}_{signal_name_upper}_value_to_string(decoded_value),
+                       decoded_value);
+''' + SNPRINTF_COMMON_FMT
+
+CAN_NAME_FMT = '''\
+    case {const}:
+        if (strlen("{name}") >= size) return (-EINVAL);
+        strcpy(dst_p, "{name}");
+        break;
+'''
 
 class Signal(object):
 
@@ -690,6 +834,15 @@ class Signal(object):
             return ((2 ** (self.length - 1)) - 1)
         else:
             return ((2 ** self.length) - 1)
+
+    def get_json_formatting(self):
+        # This returns a string that is used to format this signal
+        # into a JSON string.
+
+        if self.choices is not None:
+            return "\\\"%s:%g\\\""
+        # TODO Confirm float edge cases won't blow out the JSON output buffer.
+        return "%g"
 
     def segments(self, invert_shift):
         index, pos = divmod(self.start, 8)
@@ -1044,6 +1197,50 @@ def _format_unpack_code_mux(message,
 
     return [('    ' + line).rstrip() for line in lines]
 
+def _format_to_json_code_mux(message,
+                            mux,
+                            body_lines_per_index,
+                            variable_lines,
+                            helper_kinds,
+                            disable_snake_case_conversion,
+                            database_name):
+    signal_name, multiplexed_signals = list(mux.items())[0]
+    _format_to_json_code_signal(message,
+                                signal_name,
+                                body_lines_per_index,
+                                variable_lines,
+                                helper_kinds,
+                                database_name)
+    multiplexed_signals_per_id = sorted(list(multiplexed_signals.items()))
+    if disable_snake_case_conversion:
+        signal_name = _canonical(signal_name)
+    else:
+        signal_name = camel_to_snake_case(signal_name)
+
+    lines = [
+        'switch (src_p->{}) {{'.format(signal_name)
+    ]
+
+    for multiplexer_id, multiplexed_signals in multiplexed_signals_per_id:
+        body_lines = _format_to_json_code_level(message,
+                                               multiplexed_signals,
+                                               variable_lines,
+                                               helper_kinds,
+                                               disable_snake_case_conversion,
+                                               database_name)
+        lines.append('')
+        lines.append('case {}:'.format(multiplexer_id))
+        lines.extend(_strip_blank_lines(body_lines))
+        lines.append('    break;')
+
+    lines.extend([
+        '',
+        'default:',
+        '    break;',
+        '}'])
+
+    return [('    ' + line).rstrip() for line in lines]
+
 
 def _format_unpack_code_signal(message,
                                signal_name,
@@ -1094,6 +1291,27 @@ def _format_unpack_code_signal(message,
                                                               signal.type_length)
         body_lines.append(conversion)
 
+def _format_to_json_code_signal(message,
+                                signal_name,
+                                body_lines,
+                                variable_lines,
+                                helper_kinds,
+                                database_name):
+    signal = message.get_signal_by_name(signal_name)
+    fmt = ""
+    if signal.choices is not None:
+        fmt = SNPRINTF_ENUM_FMT
+    else:
+        fmt = SNPRINTF_FMT
+    body_lines.append(fmt.format(
+                                 database_name=database_name,
+                                 message_name=message.name,
+                                 signal_name=signal.exported_name,
+                                 format=signal.get_json_formatting(),
+                                 database_name_upper=database_name.upper(),
+                                 message_name_upper=message.name.upper(),
+                                 signal_name_upper=signal.exported_name.upper()
+                                ))
 
 def _format_unpack_code_level(message,
                               signal_names,
@@ -1141,6 +1359,55 @@ def _format_unpack_code_level(message,
 
     return body_lines
 
+def _format_to_json_code_level(message,
+                               signal_names,
+                               variable_lines,
+                               helper_kinds,
+                               disable_snake_case_conversion,
+                               database_name):
+    """Format one to_json level in a signal tree. (???)
+
+    """
+
+    body_lines = []
+    muxes_lines = []
+
+    for signal_name in signal_names:
+        if isinstance(signal_name, dict):
+            mux_lines = _format_to_json_code_mux(message,
+                                                 signal_name,
+                                                 body_lines,
+                                                 variable_lines,
+                                                 helper_kinds,
+                                                 disable_snake_case_conversion,
+                                                 database_name)
+
+            if muxes_lines:
+                muxes_lines.append('')
+
+            muxes_lines += mux_lines
+        else:
+            _format_to_json_code_signal(message,
+                                        signal_name,
+                                        body_lines,
+                                        variable_lines,
+                                        helper_kinds,
+                                        database_name)
+
+    if body_lines:
+        if body_lines[-1] != '':
+            body_lines.append('')
+
+    if muxes_lines:
+        muxes_lines.append('')
+
+    body_lines = body_lines + muxes_lines
+
+    if body_lines:
+        body_lines = [''] + body_lines
+
+    return body_lines
+
 
 def _format_unpack_code(message, helper_kinds, disable_snake_case_conversion):
     variable_lines = []
@@ -1155,6 +1422,19 @@ def _format_unpack_code(message, helper_kinds, disable_snake_case_conversion):
 
     return '\n'.join(variable_lines), '\n'.join(body_lines)
 
+def _format_to_json_code(message, helper_kinds, disable_snake_case_conversion, database_name):
+    variable_lines = []
+    body_lines = _format_to_json_code_level(message,
+                                            message.signal_tree,
+                                            variable_lines,
+                                            helper_kinds,
+                                            disable_snake_case_conversion,
+                                            database_name)
+
+    if variable_lines:
+        variable_lines = sorted(list(set(variable_lines))) + ['', '']
+
+    return '\n'.join(variable_lines), '\n'.join(body_lines)
 
 def _generate_struct(message, bit_fields):
     members = []
@@ -1333,6 +1613,7 @@ def _generate_is_extended_frame_defines(database_name, messages):
 
 def _generate_choices_defines(database_name, messages):
     choices_defines = []
+    choice_decoder_defines = []
 
     for message in messages:
         for signal in message.signals:
@@ -1348,8 +1629,40 @@ def _generate_choices_defines(database_name, messages):
             ])
             choices_defines.append(signal_choices_defines)
 
-    return '\n\n'.join(choices_defines)
+            signal_choices_defines = '\n'.join([
+                'const char* {}_{}_{}_value_to_string(int value);'.format(database_name.upper(),
+                                                                        message.exported_name.upper(),
+                                                                        signal.exported_name.upper())])
+            choice_decoder_defines.append(signal_choices_defines)
 
+    return '\n\n'.join(choices_defines) + '\n\n'+ '\n\n'.join(choice_decoder_defines)
+
+def _generate_choice_decoders(database_name, messages):
+    # return ''
+    decoders = []
+
+    for message in messages:
+        for signal in message.signals:
+            if signal.choices is None:
+                continue
+
+            decoder = []
+            decoder.append('const char* {}_{}_{}_value_to_string(int value)'.format(database_name.upper(),
+                                                                            message.exported_name.upper(),
+                                                                            signal.exported_name.upper()))
+            decoder.append('{\n    switch (value)\n    {')
+            # for _,enum in signal.choices.items():
+            for value,enum in signal.unique_choices.items():
+                fmt = '{database_name}_{message_name}_{signal_name}_{enum_val}_CHOICE'
+                const = fmt.format(database_name=database_name.upper(),
+                                   message_name=message.exported_name.upper(),
+                                   signal_name=signal.exported_name.upper(),
+                                   enum_val=enum.upper())
+                decoder.append('    case {const}:\n        return "{string}";'.format(const=const, string=signal.choices[value].upper()))
+
+            decoder.append('    default:\n        return "";\n    }\n}')
+            decoders.append('\n'.join(decoder))
+    return '\n\n'.join(decoders)
 
 def _generate_structs(database_name, messages, bit_fields):
     structs = []
@@ -1406,6 +1719,7 @@ def _generate_definitions(database_name, messages, floating_point_numbers, disab
     definitions = []
     pack_helper_kinds = set()
     unpack_helper_kinds = set()
+    to_json_helper_kinds = set()
 
     for message in messages:
         signal_definitions = []
@@ -1446,8 +1760,13 @@ def _generate_definitions(database_name, messages, floating_point_numbers, disab
             unpack_variables, unpack_body = _format_unpack_code(message,
                                                                 unpack_helper_kinds,
                                                                 disable_snake_case_conversion)
+            to_json_variables, to_json_body = _format_to_json_code(message,
+                                                                to_json_helper_kinds,
+                                                                disable_snake_case_conversion,
+                                                                database_name)
             pack_unused = ''
             unpack_unused = ''
+            to_json_unused = ''
 
             if not pack_body:
                 pack_unused += '    (void)src_p;\n\n'
@@ -1462,10 +1781,13 @@ def _generate_definitions(database_name, messages, floating_point_numbers, disab
                                                message_length=message.length,
                                                pack_unused=pack_unused,
                                                unpack_unused=unpack_unused,
+                                               to_json_unused=to_json_unused,
                                                pack_variables=pack_variables,
                                                pack_body=pack_body,
                                                unpack_variables=unpack_variables,
-                                               unpack_body=unpack_body)
+                                               unpack_body=unpack_body,
+                                               to_json_variables=to_json_variables,
+                                               to_json_body=to_json_body)
         else:
             definition = EMPTY_DEFINITION_FMT.format(database_name=database_name,
                                                      message_name=message.exported_name)
@@ -1541,6 +1863,29 @@ def _generate_fuzzer_source(database_name,
 
     return source, makefile
 
+def _generate_unpacked_structs(database_name, messages):
+    lookup = []
+    for message in messages:
+        frame_name = '{}_{}_'.format(database_name, message.exported_name)
+        lookup.append('struct {name}t {name}unpacked;'.format(name=frame_name))
+    return '\n'.join(lookup)
+
+def _generate_decoder(database_name, messages):
+    lookup = []
+
+    for message in messages:
+        frame_const = '{}_{}_FRAME_ID'.format(database_name.upper(), message.exported_name.upper())
+        frame_name = '{}_{}_'.format(database_name, message.exported_name)
+        lookup.append(TO_JSON_FMT.format(const=frame_const, name=frame_name))
+    return '\n'.join(lookup)
+
+def _generate_converter(database_name, messages):
+    lookup = []
+
+    for message in messages:
+        frame_const = '{}_{}_FRAME_ID'.format(database_name.upper(), message.exported_name.upper())
+        lookup.append(CAN_NAME_FMT.format(const=frame_const, name=message.exported_name))
+    return '\n'.join(lookup)
 
 def generate(database,
              database_name,
@@ -1601,6 +1946,14 @@ def generate(database,
                                                       disable_snake_case_conversion)
     helpers = _generate_helpers(helper_kinds)
 
+    unpacked_structs = _generate_unpacked_structs(database_name, messages)
+
+    decoder = _generate_decoder(database_name, messages)
+
+    can_id_to_message = _generate_converter(database_name, messages)
+
+    choice_decoders = _generate_choice_decoders(database_name, messages)
+
     header = HEADER_FMT.format(version=__version__,
                                date=date,
                                include_guard=include_guard,
@@ -1616,7 +1969,11 @@ def generate(database,
                                date=date,
                                header=header_name,
                                helpers=helpers,
-                               definitions=definitions)
+                               definitions=definitions,
+                               unpacked_structs=unpacked_structs,
+                               decoder=decoder,
+                               can_id_to_message=can_id_to_message,
+                               choice_decoders=choice_decoders)
 
     fuzzer_source, fuzzer_makefile = _generate_fuzzer_source(
         database_name,
