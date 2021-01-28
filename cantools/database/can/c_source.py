@@ -825,14 +825,16 @@ class Signal(object):
     def get_json_formatting(self):
         # This returns a string that is used to format this signal
         # into a JSON string.
+
+        if self._signal.unit == "Enum":
+            return "\\\":%g\\\""
+        # TODO Confirm float edge cases won't blow out the JSON output buffer.
         return "%g"
-        # TODO evaluate whether this is the best solution.
-        # It will likely have to change once enum decoding is in.
-        # if self.type_name in ['float', 'double']:
-        # if self.decimal.scale != 1:
-        #     return "%15.3e"
-        # else:
-        #     return "%d"
+
+    def get_enum_text(self, value):
+        if self._signal._choices is None:
+            return ""
+        return self._signal.choices[value]
 
     def segments(self, invert_shift):
         index, pos = divmod(self.start, 8)
@@ -1282,13 +1284,18 @@ def _format_unpack_code_signal(message,
         body_lines.append(conversion)
 
 def _format_to_json_code_signal(message,
-                               signal_name,
-                               body_lines,
-                               variable_lines,
-                               helper_kinds,
-                               database_name):
+                                signal_name,
+                                body_lines,
+                                variable_lines,
+                                helper_kinds,
+                                database_name):
     signal = message.get_signal_by_name(signal_name)
-    body_lines.append(SNPRINTF_FMT.format(database_name=database_name, message_name=message.name, signal_name=signal.exported_name, format=signal.get_json_formatting()))
+    body_lines.append(SNPRINTF_FMT.format(
+                                          database_name=database_name,
+                                          message_name=message.name,
+                                          signal_name=signal.exported_name,
+                                          format=signal.get_json_formatting()
+                                          ))
 
 def _format_unpack_code_level(message,
                               signal_names,
