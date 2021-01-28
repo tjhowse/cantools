@@ -149,6 +149,7 @@ SOURCE_FMT = '''\
 
 {helpers}\
 {definitions}\
+{choice_decoders}\
 
 {unpacked_structs}\
 
@@ -830,11 +831,6 @@ class Signal(object):
             return "\\\":%g\\\""
         # TODO Confirm float edge cases won't blow out the JSON output buffer.
         return "%g"
-
-    def get_enum_text(self, value):
-        if self._signal._choices is None:
-            return ""
-        return self._signal.choices[value]
 
     def segments(self, invert_shift):
         index, pos = divmod(self.start, 8)
@@ -1597,6 +1593,7 @@ def _generate_is_extended_frame_defines(database_name, messages):
 
 def _generate_choices_defines(database_name, messages):
     choices_defines = []
+    choice_decoder_defines = []
 
     for message in messages:
         for signal in message.signals:
@@ -1612,8 +1609,40 @@ def _generate_choices_defines(database_name, messages):
             ])
             choices_defines.append(signal_choices_defines)
 
-    return '\n\n'.join(choices_defines)
+            signal_choices_defines = '\n'.join([
+                'const char* {}_{}_{}_value_to_string(int value);'.format(database_name.upper(),
+                                                                        message.exported_name.upper(),
+                                                                        signal.exported_name.upper())])
+            choice_decoder_defines.append(signal_choices_defines)
 
+    return '\n\n'.join(choices_defines) + '\n\n'+ '\n\n'.join(choice_decoder_defines)
+
+def _generate_choice_decoders(database_name, messages):
+    # return ''
+    decoders = []
+
+    for message in messages:
+        for signal in message.signals:
+            if signal.choices is None:
+                continue
+
+            decoder = []
+            decoder.append('const char* {}_{}_{}_value_to_string(int value)'.format(database_name.upper(),
+                                                                            message.exported_name.upper(),
+                                                                            signal.exported_name.upper()))
+            decoder.append('{\n    switch (value)\n    {')
+            # for _,enum in signal.choices.items():
+            for value,enum in signal.unique_choices.items():
+                fmt = '{database_name}_{message_name}_{signal_name}_{enum_val}_CHOICE'
+                const = fmt.format(database_name=database_name.upper(),
+                                   message_name=message.exported_name.upper(),
+                                   signal_name=signal.exported_name.upper(),
+                                   enum_val=enum.upper())
+                decoder.append('    case {const}:\n        return "{string}";'.format(const=const, string=signal.choices[value].upper()))
+
+            decoder.append('    default:\n        return "";\n    }\n}')
+            decoders.append('\n'.join(decoder))
+    return '\n\n'.join(decoders)
 
 def _generate_structs(database_name, messages, bit_fields):
     structs = []
@@ -1903,6 +1932,8 @@ def generate(database,
 
     can_id_to_message = _generate_converter(database_name, messages)
 
+    choice_decoders = _generate_choice_decoders(database_name, messages)
+
     header = HEADER_FMT.format(version=__version__,
                                date=date,
                                include_guard=include_guard,
@@ -1921,7 +1952,8 @@ def generate(database,
                                definitions=definitions,
                                unpacked_structs=unpacked_structs,
                                decoder=decoder,
-                               can_id_to_message=can_id_to_message)
+                               can_id_to_message=can_id_to_message,
+                               choice_decoders=choice_decoders)
 
     fuzzer_source, fuzzer_makefile = _generate_fuzzer_source(
         database_name,
