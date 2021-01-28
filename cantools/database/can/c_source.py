@@ -648,16 +648,27 @@ TO_JSON_FMT = '''\
         break;
 '''
 
-SNPRINTF_FMT = '''\
-    decoded_value = {database_name}_{message_name}_{signal_name}_decode(src_p->{signal_name});
-    written = snprintf(snprintf_buffer, SNPRINTF_BUFFER_LEN,
-                       \"\\"{signal_name}\\": {format}, \",
-                       decoded_value);
+SNPRINTF_COMMON_FMT = '''\
     if ((written < 0) || (written >= SNPRINTF_BUFFER_LEN)) return (-EINVAL);
     if ((total_size + written) >= size) return (-EINVAL);
     memcpy(dst_p + total_size, snprintf_buffer, written);
     total_size += written;
 '''
+
+SNPRINTF_FMT = '''\
+    decoded_value = {database_name}_{message_name}_{signal_name}_decode(src_p->{signal_name});
+    written = snprintf(snprintf_buffer, SNPRINTF_BUFFER_LEN,
+                       \"\\"{signal_name}\\": {format}, \",
+                       decoded_value);
+''' + SNPRINTF_COMMON_FMT
+
+SNPRINTF_ENUM_FMT = '''\
+    decoded_value = {database_name}_{message_name}_{signal_name}_decode(src_p->{signal_name});
+    written = snprintf(snprintf_buffer, SNPRINTF_BUFFER_LEN,
+                       \"\\"{signal_name}\\": {format}, \",
+                       {database_name_upper}_{message_name_upper}_{signal_name_upper}_value_to_string(decoded_value),
+                       decoded_value);
+''' + SNPRINTF_COMMON_FMT
 
 CAN_NAME_FMT = '''\
     case {const}:
@@ -827,8 +838,8 @@ class Signal(object):
         # This returns a string that is used to format this signal
         # into a JSON string.
 
-        if self._signal.unit == "Enum":
-            return "\\\":%g\\\""
+        if self.choices is not None:
+            return "\\\"%s:%g\\\""
         # TODO Confirm float edge cases won't blow out the JSON output buffer.
         return "%g"
 
@@ -1286,12 +1297,20 @@ def _format_to_json_code_signal(message,
                                 helper_kinds,
                                 database_name):
     signal = message.get_signal_by_name(signal_name)
-    body_lines.append(SNPRINTF_FMT.format(
-                                          database_name=database_name,
-                                          message_name=message.name,
-                                          signal_name=signal.exported_name,
-                                          format=signal.get_json_formatting()
-                                          ))
+    fmt = ""
+    if signal.choices is not None:
+        fmt = SNPRINTF_ENUM_FMT
+    else:
+        fmt = SNPRINTF_FMT
+    body_lines.append(fmt.format(
+                                 database_name=database_name,
+                                 message_name=message.name,
+                                 signal_name=signal.exported_name,
+                                 format=signal.get_json_formatting(),
+                                 database_name_upper=database_name.upper(),
+                                 message_name_upper=message.name.upper(),
+                                 signal_name_upper=signal.exported_name.upper()
+                                ))
 
 def _format_unpack_code_level(message,
                               signal_names,
