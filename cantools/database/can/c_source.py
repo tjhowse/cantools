@@ -46,6 +46,8 @@ extern "C" {{
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <string.h>
+#include <stdio.h>
 
 #ifndef EINVAL
 #    define EINVAL 22
@@ -101,7 +103,7 @@ int json_decode(
  */
 
 int can_id_to_message_name(
-        uint8_t *dst_p,
+        char *dst_p,
         size_t size,
         uint32_t can_id);
 
@@ -173,11 +175,10 @@ int json_decode(
 }}
 
 int can_id_to_message_name(
-        uint8_t *dst_p,
+        char *dst_p,
         size_t size,
         uint32_t can_id)
 {{
-    int result;
     switch(can_id)
     {{
 {can_id_to_message}\
