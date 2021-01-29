@@ -22,7 +22,7 @@ class SystemLoader(object):
         m = re.match('^\\{(.*)\\}AUTOSAR$', self._root.tag)
 
         if not m:
-            raise ValueError(f"No XML namespace specified or illegal root tag name '{self._root.tag}'")
+            raise ValueError("No XML namespace specified or illegal root tag name '{}'".format(self._root.tag))
 
         xml_namespace = m.group(1)
         self.xml_namespace = xml_namespace
@@ -33,11 +33,11 @@ class SystemLoader(object):
             # AUTOSAR 4
             autosar_version_string = m.group(1)
         else:
-            raise ValueError(f"Unrecognized AUTOSAR XML namespace '{xml_namespace}'")
+            raise ValueError("Unrecognized AUTOSAR XML namespace '{}'".format(xml_namespace))
 
         m = re.match('^([0-9]*)(\.[0-9]*)?(\.[0-9]*)?$', autosar_version_string)
         if not m:
-            raise ValueError(f"Could not parse AUTOSAR version '{autosar_version_string}'")
+            raise ValueError("Could not parse AUTOSAR version '{}'".format(autosar_version_string))
 
         self.autosar_version_major = int(m.group(1))
         self.autosar_version_minor = 0 if m.group(2) is None else int(m.group(2)[1:])
@@ -1065,7 +1065,7 @@ def load_string(string, strict=True):
 
     m = re.match("{(.*)}AUTOSAR", root.tag)
     if not m:
-        raise ValueError(f"No XML namespace specified or illegal root tag name '{root.tag}'")
+        raise ValueError("No XML namespace specified or illegal root tag name '{}'".format(root.tag))
     xml_namespace = m.group(1)
 
     # Should be replaced with a validation using the XSD file.
@@ -1074,7 +1074,7 @@ def load_string(string, strict=True):
         recognized_namespace = True
 
     if not recognized_namespace:
-        raise ValueError(f"Unrecognized XML namespace '{xml_namespace}'")
+        raise ValueError("Unrecognized XML namespace '{}'".format(xml_namespace))
 
     if is_ecu_extract(root):
         if root.tag != ROOT_TAG:
