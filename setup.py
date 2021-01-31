@@ -11,7 +11,7 @@ def find_version():
                      re.MULTILINE).group(1)
 
 
-setup(name='cantools',
+setup(name='tri_cantools',
       version=find_version(),
       description='CAN BUS tools.',
       long_description=open('README.rst', 'r').read(),
