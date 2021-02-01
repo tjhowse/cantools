@@ -233,7 +233,7 @@ class SystemLoader(object):
         # group, in which case we have ignore it if the XSD is to be believed.
         # ARXML is great!
         system_signal = self._get_unique_arxml_child(i_signal, '&SYSTEM-SIGNAL')
-        if system_signal is not None and system_signal.tag != f'{{{self.xml_namespace}}}SYSTEM-SIGNAL':
+        if system_signal is not None and system_signal.tag != '{{{}}}SYSTEM-SIGNAL'.format(self.xml_namespace):
             return None
 
         # Default values.
