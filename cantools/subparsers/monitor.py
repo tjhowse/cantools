@@ -5,7 +5,6 @@ import bisect
 import queue
 
 import can
-from argparse_addons import Integer
 from .. import database
 from .utils import format_message
 from .utils import format_multiplexed_name
@@ -339,7 +338,7 @@ def add_subparser(subparsers):
         help='Skip database consistency checks.')
     monitor_parser.add_argument(
         '-m', '--frame-id-mask',
-        type=Integer(0),
+        type=int,
         help=('Only compare selected frame id bits to find the message in the '
               'database. By default the received and database frame ids must '
               'be equal for a match.'))

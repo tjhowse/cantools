@@ -31,7 +31,6 @@ setup(name='cantools',
           'python-can>=2.2.0',
           'textparser>=0.21.1',
           'diskcache',
-          'argparse_addons==0.1.0',
       ],
       test_suite="tests",
       entry_points = {
