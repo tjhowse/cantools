@@ -842,6 +842,8 @@ class Signal(object):
         if self.choices is not None:
             return "\\\"%s:%g\\\""
         # TODO Confirm float edge cases won't blow out the JSON output buffer.
+        # TODO This doesn't work for big integers like serial numbers, it converts them to scientific notation.
+        # We should fix the .is_float property and return "%d" or "%g" accordingly.
         return "%g"
 
     def segments(self, invert_shift):
