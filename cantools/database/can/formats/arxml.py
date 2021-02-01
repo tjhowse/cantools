@@ -616,24 +616,22 @@ class SystemLoader(object):
                 local_result = []
 
                 for child_elem in base_elem:
-                    if child_elem.tag == f'{{{self.xml_namespace}}}{child_tag_name}':
+                    if child_elem.tag == '{{{}}}{}'.format(self.xml_namespace, child_tag_name):
                         local_result.append(child_elem)
-                    elif child_elem.tag == f'{{{self.xml_namespace}}}{child_tag_name}-REF':
+                    elif child_elem.tag == '{{{}}}{}-REF'.format(self.xml_namespace, child_tag_name):
                         tmp = self._follow_arxml_reference(base_elem,
                                                            child_elem.text,
                                                            child_elem.attrib.get('DEST'))
 
                         if tmp is None:
-                            raise ValueError(f'Encountered dangling reference '
-                                             f'{child_tag_name}-REF: '
-                                             f'{child_elem.text}')
+                            raise ValueError('Encountered dangling reference {}-REF {}'.format(child_tag_name, child_elem.text))
 
                         local_result.append(tmp)
 
                 if not is_nodeset and len(local_result) > 1:
-                    raise ValueError(f'Encountered a a non-unique child node '
-                                     f'of type {child_tag_name} which ought to '
-                                     f'be unique')
+                    raise ValueError('Encountered a a non-unique child node '
+                                     'of type {} which ought to '
+                                     'be unique'.format(child_tag_name))
 
                 result.extend(local_result)
 
@@ -657,7 +655,7 @@ class SystemLoader(object):
         elif len(tmp) == 1:
             return tmp[0]
         else:
-            raise ValueError(f'{child_location} does not resolve into a unique node')
+            raise ValueError('{} does not resolve into a unique node'.format(child_location))
 
     def _get_can_frame(self, can_frame_triggering):
         return self._get_unique_arxml_child(can_frame_triggering, '&FRAME')
