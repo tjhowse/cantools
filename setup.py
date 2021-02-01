@@ -11,7 +11,7 @@ def find_version():
                      re.MULTILINE).group(1)
 
 
-setup(name='tri_cantools',
+setup(name='cantools',
       version=find_version(),
       description='CAN BUS tools.',
       long_description=open('README.rst', 'r').read(),
@@ -31,7 +31,7 @@ setup(name='tri_cantools',
           'python-can>=2.2.0',
           'textparser>=0.21.1',
           'diskcache',
-          'argparse_addons',
+          'argparse_addons==0.1.0',
       ],
       test_suite="tests",
       entry_points = {

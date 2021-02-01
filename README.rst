@@ -5,7 +5,7 @@
 About
 =====
 
-This is a fork of cantools called tri_cantools. It has more features, but worse testing.
+This is a fork of cantools called cantools. It has more features, but worse testing.
 Hopefully the features will eventually be merged upstream and this fork can die.
 
 CAN BUS tools in Python 3.
